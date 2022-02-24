@@ -9,7 +9,6 @@ open System
 open System.Threading.Tasks
 
 open Jobs
-open Rss
 
 type SimpleModule() =
     inherit BaseCommandModule()
@@ -77,7 +76,7 @@ let main = task {
     host.Services.GetRequiredService<DiscordClient>() |> ignore
 
     do! host.StartAsync()
-    do! Task.Delay(TimeSpan.FromSeconds(120))
+    do! Task.Delay(-1)
     ()
 }
 
