@@ -1,6 +1,5 @@
 ﻿open DSharpPlus
 open DSharpPlus.CommandsNext
-open DSharpPlus.CommandsNext.Attributes
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
@@ -8,18 +7,7 @@ open Quartz
 open System
 open System.Threading.Tasks
 
-open Jobs
-
-type SimpleModule() =
-    inherit BaseCommandModule()
-
-    [<Command "ping"; Description "ping pong">]
-    member _.ping (ctx: CommandContext) =
-        task {
-            let! _ = ctx.RespondAsync("pong")
-            ()
-        }
-        :> Task
+open Feed
 
 let discord token (services: IServiceProvider) =
     let config = DiscordConfiguration()
@@ -31,9 +19,10 @@ let discord token (services: IServiceProvider) =
 
     let commandsConfig = CommandsNextConfiguration()
     commandsConfig.StringPrefixes <- ["~"]
+    commandsConfig.Services <- services
 
     let commands = client.UseCommandsNext(commandsConfig)
-    commands.RegisterCommands<SimpleModule>()
+    commands.RegisterCommands<FeedModule>()
 
     client.ConnectAsync()
     |> Async.AwaitTask
@@ -45,23 +34,7 @@ let configureServices _ (services: IServiceCollection) =
     services
     |> fun sv -> sv.AddSingleton<DiscordClient>(fun s -> discord (Environment.GetEnvironmentVariable("PRIMA_BOT_TOKEN")) s)
     |> fun sv -> sv.AddSingleton<FeedState>()
-    |> fun sv -> sv.AddQuartz (fun q ->
-        q.UseMicrosoftDependencyInjectionJobFactory()
-        
-        q.ScheduleJob<FeedJob>(
-            (fun trigger ->
-                trigger
-                |> fun t -> t.WithIdentity("trigger1", "group1")
-                |> fun t -> t.StartNow()
-                |> fun t -> t.WithSimpleSchedule(fun x -> x.WithIntervalInSeconds(5).RepeatForever() |> ignore)
-                |> ignore),
-            (fun job ->
-                job
-                |> fun j -> j.WithIdentity("job1", "group1")
-                |> fun j -> j.UsingJobData("feedUrl", "https://www.reddit.com/.rss")
-                |> ignore)) |> ignore
-
-        ())
+    |> fun sv -> sv.AddQuartz (fun q -> q.UseMicrosoftDependencyInjectionJobFactory())
     |> fun sv -> sv.AddQuartzHostedService (fun opts -> 
         opts.WaitForJobsToComplete <- true)
     |> ignore

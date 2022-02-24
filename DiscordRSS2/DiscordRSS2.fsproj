@@ -7,7 +7,7 @@
 
   <ItemGroup>
     <Compile Include="Rss.fs" />
-    <Compile Include="Jobs.fs" />
+    <Compile Include="Feed.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
 
