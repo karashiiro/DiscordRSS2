@@ -1,22 +1,20 @@
-﻿open DSharpPlus;
-open DSharpPlus.CommandsNext;
-open DSharpPlus.CommandsNext.Attributes;
-open Quartz;
-open Quartz.Impl;
-open Quartz.Logging;
-open System;
-open System.Threading.Tasks;
+﻿open DSharpPlus
+open DSharpPlus.CommandsNext
+open DSharpPlus.CommandsNext.Attributes
+open Microsoft.Extensions.DependencyInjection
+open Microsoft.Extensions.Hosting
+open Quartz
+open System
+open System.Threading.Tasks
 
-open Jobs;
-open LogProvider;
-open Rss;
+open Jobs
+open Rss
 
 type SimpleModule() =
     inherit BaseCommandModule()
 
-    [<Command "ping">]
-    [<Description "ping pong">]
-    member _.ping (ctx: CommandContext) =
+    [<Command "ping"; Description "ping pong">]
+    member public _.ping (ctx: CommandContext) =
         task {
             let! _ = ctx.RespondAsync("pong")
             ()
@@ -35,38 +33,47 @@ let discord token =
     let commands = client.UseCommandsNext(commandsConfig)
     commands.RegisterCommands<SimpleModule>()
 
+    client.ConnectAsync()
+    |> Async.AwaitTask
+    |> Async.RunSynchronously
+
     client
 
+let configureServices _ (services: IServiceCollection) =
+    services
+    |> fun sv -> sv.AddSingleton(discord (Environment.GetEnvironmentVariable("PRIMA_BOT_TOKEN")))
+    |> fun sv -> sv.AddQuartz (fun q ->
+        q.UseMicrosoftDependencyInjectionJobFactory()
+
+        let seenEntries = RssEntries.empty |> RssEntries.serialize
+        q.ScheduleJob<FeedJob>(
+            (fun trigger ->
+                trigger
+                |> fun t -> t.WithIdentity("trigger1", "group1")
+                |> fun t -> t.StartNow()
+                |> fun t -> t.WithSimpleSchedule(fun x -> x.WithIntervalInSeconds(5).RepeatForever() |> ignore)
+                |> ignore),
+            (fun job ->
+                job
+                |> fun j -> j.WithIdentity("job1", "group1")
+                |> fun j -> j.UsingJobData("seen", seenEntries)
+                |> ignore)) |> ignore
+
+        ())
+    |> fun sv -> sv.AddQuartzHostedService (fun opts -> 
+        opts.WaitForJobsToComplete <- true)
+    |> ignore
+
 let main = task {
-    LogProvider.SetCurrentLogProvider(ConsoleLogProvider())
-
-    let factory = StdSchedulerFactory()
-    let! scheduler = factory.GetScheduler()
-
-    do! scheduler.Start()
-
-    let seenEntries = RssEntries.empty |> RssEntries.serialize
-    let job =
-        JobBuilder.Create<FeedJob>()
-        |> fun jb -> jb.WithIdentity("job1", "group1")
-        |> fun jb -> jb.UsingJobData("seen", seenEntries)
-        |> fun jb -> jb.Build()
-
-    let trigger =
-        TriggerBuilder.Create()
-        |> fun tb -> tb.WithIdentity("trigger1", "group1")
-        |> fun tb -> tb.StartNow()
-        |> fun tb -> tb.WithSimpleSchedule(fun x -> x.WithIntervalInSeconds(5).RepeatForever() |> ignore)
-        |> fun tb -> tb.Build()
-
-    let! _ = scheduler.ScheduleJob(job, trigger)
-
-    let discordClient = discord (Environment.GetEnvironmentVariable("PRIMA_BOT_TOKEN"))
-    do! discordClient.ConnectAsync()
-
+    use host =
+        Host.CreateDefaultBuilder()
+        |> fun b -> b.ConfigureServices(configureServices)
+        |> fun b -> b.Build()
+    do! host.StartAsync()
     do! Task.Delay(TimeSpan.FromSeconds(120))
-    do! scheduler.Shutdown()
     ()
 }
 
-main.Wait()
+main
+|> Async.AwaitTask
+|> Async.RunSynchronously

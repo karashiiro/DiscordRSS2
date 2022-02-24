@@ -7,7 +7,6 @@
 
   <ItemGroup>
     <Compile Include="Rss.fs" />
-    <Compile Include="LogProvider.fs" />
     <Compile Include="Jobs.fs" />
     <Compile Include="Program.fs" />
   </ItemGroup>
@@ -16,7 +15,9 @@
     <PackageReference Include="DSharpPlus" Version="4.1.0" />
     <PackageReference Include="DSharpPlus.CommandsNext" Version="4.1.0" />
     <PackageReference Include="FSharp.Data" Version="4.2.7" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="6.0.1" />
     <PackageReference Include="Quartz" Version="3.3.3" />
+    <PackageReference Include="Quartz.Extensions.Hosting" Version="3.3.3" />
   </ItemGroup>
 
   <ItemGroup>
