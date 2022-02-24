@@ -45,10 +45,10 @@ let discord token (services: IServiceProvider) =
 let configureServices _ (services: IServiceCollection) =
     services
     |> fun sv -> sv.AddSingleton<DiscordClient>(fun s -> discord (Environment.GetEnvironmentVariable("PRIMA_BOT_TOKEN")) s)
+    |> fun sv -> sv.AddSingleton<FeedState>()
     |> fun sv -> sv.AddQuartz (fun q ->
         q.UseMicrosoftDependencyInjectionJobFactory()
-
-        let seenEntries = RssEntries.empty |> RssEntries.serialize
+        
         q.ScheduleJob<FeedJob>(
             (fun trigger ->
                 trigger
@@ -59,7 +59,7 @@ let configureServices _ (services: IServiceCollection) =
             (fun job ->
                 job
                 |> fun j -> j.WithIdentity("job1", "group1")
-                |> fun j -> j.UsingJobData("seen", seenEntries)
+                |> fun j -> j.UsingJobData("feedUrl", "https://www.reddit.com/.rss")
                 |> ignore)) |> ignore
 
         ())
