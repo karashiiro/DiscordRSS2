@@ -3,10 +3,9 @@ open DSharpPlus.CommandsNext
 open DSharpPlus.CommandsNext.Attributes
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
+open Microsoft.Extensions.Logging
 open Quartz
 open System
-open System.Reflection
-open System.Linq
 open System.Threading.Tasks
 
 open Jobs
@@ -23,10 +22,11 @@ type SimpleModule() =
         }
         :> Task
 
-let discord token =
+let discord token (services: IServiceProvider) =
     let config = DiscordConfiguration()
     config.Token <- token
     config.TokenType <- TokenType.Bot
+    config.LoggerFactory <- services.GetRequiredService<ILoggerFactory>()
 
     let client = new DiscordClient(config)
 
@@ -44,7 +44,7 @@ let discord token =
 
 let configureServices _ (services: IServiceCollection) =
     services
-    |> fun sv -> sv.AddSingleton(discord (Environment.GetEnvironmentVariable("PRIMA_BOT_TOKEN")))
+    |> fun sv -> sv.AddSingleton<DiscordClient>(fun s -> discord (Environment.GetEnvironmentVariable("PRIMA_BOT_TOKEN")) s)
     |> fun sv -> sv.AddQuartz (fun q ->
         q.UseMicrosoftDependencyInjectionJobFactory()
 
@@ -72,6 +72,10 @@ let main = task {
         Host.CreateDefaultBuilder()
         |> fun b -> b.ConfigureServices(configureServices)
         |> fun b -> b.Build()
+
+    // Force the Discord client to be initialized
+    host.Services.GetRequiredService<DiscordClient>() |> ignore
+
     do! host.StartAsync()
     do! Task.Delay(TimeSpan.FromSeconds(120))
     ()
