@@ -10,10 +10,10 @@ open Quartz
 open System
 open System.Collections.Concurrent
 open System.Net
+open System.Runtime.InteropServices
 open System.Threading.Tasks
 
 open Rss
-open System.Runtime.InteropServices
 
 type FeedState() =
     let entries = ConcurrentDictionary<string, Set<string>>()
