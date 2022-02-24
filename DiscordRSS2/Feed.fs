@@ -5,9 +5,11 @@ open DSharpPlus.CommandsNext
 open DSharpPlus.CommandsNext.Attributes
 open DSharpPlus.Entities
 open Microsoft.Extensions.DependencyInjection
+open Microsoft.Extensions.Logging
 open Quartz
 open System
 open System.Collections.Concurrent
+open System.Net
 open System.Threading.Tasks
 
 open Rss
@@ -20,9 +22,10 @@ type FeedState() =
 
 [<PersistJobDataAfterExecution>]
 [<DisallowConcurrentExecution>]
-type FeedJob(state0: FeedState, client0: DiscordClient) =
+type FeedJob(state0: FeedState, client0: DiscordClient, logger0: ILogger<FeedJob>) =
     let state = state0
     let client = client0
+    let logger = logger0
 
     let embed (entry: Rss.Entry) =
         DiscordEmbedBuilder()
@@ -50,14 +53,17 @@ type FeedJob(state0: FeedState, client0: DiscordClient) =
                     let feedChannelId = dataMap.GetString("feedChannel") |> uint64
                     let! feedChannel = client.GetChannelAsync(feedChannelId)
 
-                    let! feed = Rss.AsyncLoad(feedUrl)
-                    for e in feed.Entries |> Seq.rev do
-                        if not (feedSeen |> Set.contains e.Id) then
-                            feedSeen <- feedSeen.Add e.Id
-                            state.Entries.set_Item(feedKey, feedSeen)
-                            let! _ = feedChannel.SendMessageAsync(embed e)
-                            do! Task.Delay(200)
-                            ()
+                    try
+                        let! feed = Rss.AsyncLoad(feedUrl)
+                        for e in feed.Entries |> Seq.rev do
+                            if not (feedSeen |> Set.contains e.Id) then
+                                feedSeen <- feedSeen.Add e.Id
+                                state.Entries.set_Item(feedKey, feedSeen)
+                                let! _ = feedChannel.SendMessageAsync(embed e)
+                                do! Task.Delay(200)
+                                ()
+                    with :?WebException as e ->
+                        logger.LogWarning(sprintf "Failed to complete web request (%s): %s" (e.Status.ToString()) e.Message)
                 with e ->
                     raise (JobExecutionException(e))
             }
