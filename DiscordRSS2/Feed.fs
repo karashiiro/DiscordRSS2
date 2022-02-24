@@ -4,6 +4,7 @@ open DSharpPlus
 open DSharpPlus.CommandsNext
 open DSharpPlus.CommandsNext.Attributes
 open DSharpPlus.Entities
+open Microsoft.Data.Sqlite
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Logging
 open Quartz
@@ -78,22 +79,40 @@ type FeedModule() =
     member _.subscribe (ctx: CommandContext, feed: string, [<Optional; DefaultParameterValue(null: DiscordChannel)>] channel: DiscordChannel) =
         task {
             let feedKey = parseUrlToKey (Uri(feed))
-            let feedGroup = (if channel = null then ctx.Channel.Id else channel.Id) |> sprintf "%d"
+            let feedChannel = (if isNull channel then ctx.Channel.Id else channel.Id) |> sprintf "%d"
+
+            // Create the job detail
             let factory = ctx.Services.GetRequiredService<ISchedulerFactory>()
             let! scheduler = factory.GetScheduler()
             let job =
                 JobBuilder.Create<FeedJob>()
-                |> fun jb -> jb.WithIdentity(feedKey, feedGroup)
+                |> fun jb -> jb.WithIdentity(feedKey, feedChannel)
                 |> fun jb -> jb.UsingJobData("feedUrl", feed)
-                |> fun jb -> jb.UsingJobData("feedChannel", feedGroup)
+                |> fun jb -> jb.UsingJobData("feedChannel", feedChannel)
                 |> fun jb -> jb.Build()
             let trigger =
                 TriggerBuilder.Create()
-                |> fun tb -> tb.WithIdentity("trigger__" + feedKey, feedGroup)
+                |> fun tb -> tb.WithIdentity("trigger__" + feedKey, feedChannel)
                 |> fun tb -> tb.StartNow()
                 |> fun tb -> tb.WithSimpleSchedule(fun x -> x.WithIntervalInSeconds(5).RepeatForever() |> ignore)
                 |> fun tb -> tb.Build()
+
+            // Persist the job information to the database
+            use db = new SqliteConnection("Data Source=feeds.db")
+            do! db.OpenAsync()
+
+            let insert = db.CreateCommand()
+            insert.CommandText <- @"INSERT INTO feeds (FEED_KEY, FEED_GROUP, FEED_URL, FEED_CHANNEL) VALUES ($key, $group, $url, $channel)"
+            insert.Parameters.AddWithValue("$key", feedKey) |> ignore
+            insert.Parameters.AddWithValue("$group", feedChannel) |> ignore
+            insert.Parameters.AddWithValue("$url", feed) |> ignore
+            insert.Parameters.AddWithValue("$channel", feedChannel) |> ignore
+
+            let! _ = insert.ExecuteNonQueryAsync()
+
+            // Schedule the job
             let! _ = scheduler.ScheduleJob(job, trigger)
+
             let! _ = ctx.RespondAsync("Subscribed to feed!")
             ()
         }
@@ -103,10 +122,24 @@ type FeedModule() =
     member _.unsubscribe (ctx: CommandContext, feed: string, [<Optional; DefaultParameterValue(null: DiscordChannel)>] channel: DiscordChannel) =
         task {
             let feedKey = parseUrlToKey (Uri(feed))
-            let feedGroup = (if channel = null then ctx.Channel.Id else channel.Id) |> sprintf "%d"
+            let feedChannel = (if isNull channel then ctx.Channel.Id else channel.Id) |> sprintf "%d"
+
+            // Delete the job from the scheduler
             let factory = ctx.Services.GetRequiredService<ISchedulerFactory>()
             let! scheduler = factory.GetScheduler()
-            let! result = scheduler.DeleteJob(JobKey(feedKey, feedGroup))
+            let! result = scheduler.DeleteJob(JobKey(feedKey, feedChannel))
+
+            // Delete the job information from the database
+            use db = new SqliteConnection("Data Source=feeds.db")
+            do! db.OpenAsync()
+
+            let insert = db.CreateCommand()
+            insert.CommandText <- @"DELETE FROM feeds WHERE FEED_URL = $url AND FEED_CHANNEL = $channel)"
+            insert.Parameters.AddWithValue("$url", feed) |> ignore
+            insert.Parameters.AddWithValue("$channel", feedChannel) |> ignore
+
+            let! _ = insert.ExecuteNonQueryAsync()
+
             let! _ =
                 match result with
                 | true -> ctx.RespondAsync("Unsubscribed from feed!")
