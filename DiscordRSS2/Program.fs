@@ -5,6 +5,8 @@ open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Quartz
 open System
+open System.Reflection
+open System.Linq
 open System.Threading.Tasks
 
 open Jobs
@@ -14,11 +16,12 @@ type SimpleModule() =
     inherit BaseCommandModule()
 
     [<Command "ping"; Description "ping pong">]
-    member public _.ping (ctx: CommandContext) =
+    member _.ping (ctx: CommandContext) =
         task {
             let! _ = ctx.RespondAsync("pong")
             ()
         }
+        :> Task
 
 let discord token =
     let config = DiscordConfiguration()
