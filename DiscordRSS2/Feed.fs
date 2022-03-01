@@ -8,13 +8,12 @@ open Microsoft.Data.Sqlite
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Logging
 open Quartz
+open Rss
 open System
 open System.Collections.Concurrent
 open System.Net
 open System.Runtime.InteropServices
 open System.Threading.Tasks
-
-open Rss
 
 type FeedState() =
     let entries = ConcurrentDictionary<string, Set<string>>()
@@ -30,7 +29,7 @@ type FeedJob(state0: FeedState, client0: DiscordClient, logger0: ILogger<FeedJob
 
     let embed (entry: Rss.Entry) =
         DiscordEmbedBuilder()
-        |> fun eb -> eb.WithTitle entry.Title
+        |> fun eb -> eb.WithTitle (if entry.Title.Length < 256 then entry.Title else (sprintf "%s..." entry.Title[..252]))
         |> fun eb -> eb.WithUrl entry.Link.Href
         |> fun eb ->
             match entry.Thumbnail with

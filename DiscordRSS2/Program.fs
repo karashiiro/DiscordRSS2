@@ -1,15 +1,23 @@
 ﻿open DSharpPlus
 open DSharpPlus.CommandsNext
+open Feed
 open Microsoft.Data.Sqlite
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
 open Quartz
 open System
+open System.IO
+open System.Reflection
 open System.Text.RegularExpressions
 open System.Threading.Tasks
 
-open Feed
+let loade name =
+    task {
+        use s = Assembly.GetExecutingAssembly().GetManifestResourceStream(name)
+        use sr = new StreamReader(s)
+        return! sr.ReadToEndAsync()
+    }
 
 let discord token (services: IServiceProvider) =
     let config = DiscordConfiguration()
@@ -32,25 +40,25 @@ let discord token (services: IServiceProvider) =
 
     client
 
+let feedsDbPath = "feeds.db"
+let jobsDbPath = "jobs.db"
 let initDb =
     task {
-        use db = new SqliteConnection("Data Source=feeds.db")
-        do! db.OpenAsync()
+        use db1 = new SqliteConnection(sprintf "Data Source=%s" feedsDbPath)
+        do! db1.OpenAsync()
+        let dbInit1 = db1.CreateCommand()
+        let! feedsScript = loade "DiscordRSS2.feeds.sql"
+        dbInit1.CommandText <- feedsScript
+        let! _ = dbInit1.ExecuteNonQueryAsync()
 
-        let dbInit = db.CreateCommand()
-        dbInit.CommandText <- @"CREATE TABLE feeds (
-            ID           INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-            FEED_KEY     TEXT                              NOT NULL,
-            FEED_GROUP   TEXT                              NOT NULL,
-            FEED_URL     TEXT                              NOT NULL,
-            FEED_CHANNEL TEXT                              NOT NULL
-        )"
+        use db2 = new SqliteConnection(sprintf "Data Source=%s" jobsDbPath)
+        do! db2.OpenAsync()
+        let dbInit2 = db2.CreateCommand()
+        let! quartzScript = loade "DiscordRSS2.Quartz.tables_sqlite.sql"
+        dbInit2.CommandText <- quartzScript
+        let! _ = dbInit2.ExecuteNonQueryAsync()
 
-        try
-            let! _ = dbInit.ExecuteNonQueryAsync()
-            ()
-        with :? SqliteException as e when Regex.IsMatch(e.Message, @"table \w* already exists") ->
-            ()
+        ()
     }
 
 let configureServices _ (services: IServiceCollection) =
@@ -64,9 +72,8 @@ let configureServices _ (services: IServiceCollection) =
     |> fun sv -> sv.AddQuartz (fun q ->
         q.UseMicrosoftDependencyInjectionJobFactory()
         q.UsePersistentStore(fun opts ->
-            // TODO: Fails to create tables in database
             opts.UseProperties <- true
-            opts.UseMicrosoftSQLite("Data Source=jobs.db")
+            opts.UseMicrosoftSQLite(sprintf "Data Source=%s" jobsDbPath)
             opts.UseJsonSerializer()))
     |> fun sv -> sv.AddQuartzHostedService (fun opts ->
         opts.WaitForJobsToComplete <- true)
