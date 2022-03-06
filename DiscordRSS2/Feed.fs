@@ -18,7 +18,21 @@ open System.Threading.Tasks
 type FeedState() =
     let entries = ConcurrentDictionary<string, Set<string>>()
 
-    member _.Entries = entries
+    member _.Create (key) =
+        let value = Set.empty
+        let ok = entries.TryAdd(key, value)
+        if ok then Ok value else Error key
+
+    member _.Retrieve (key) =
+        let ok, value = entries.TryGetValue(key)
+        if ok then Ok value else Error key
+
+    member _.Update (key, value) =
+        entries.set_Item(key, value)
+
+    member _.Delete (key) =
+        let ok, value = entries.TryRemove(key)
+        if ok then Ok value else Error key
 
 [<PersistJobDataAfterExecution>]
 [<DisallowConcurrentExecution>]
@@ -48,20 +62,31 @@ type FeedJob(state0: FeedState, client0: DiscordClient, logger0: ILogger<FeedJob
                         (context.JobDetail.Key.Group, context.JobDetail.Key.Name)
                         ||> sprintf "%s-%s"
                     let feedUrl = dataMap.GetString("feedUrl")
-                    let mutable feedSeen = state.Entries.GetOrAdd(feedKey, Set.empty)
 
                     let feedChannelId = dataMap.GetString("feedChannel") |> uint64
                     let! feedChannel = client.GetChannelAsync(feedChannelId)
 
+                    let feedSeen =
+                        match state.Retrieve(feedKey) with
+                        | Ok fs -> fs
+                        | Error _ ->
+                            match state.Create(feedKey) with
+                            | Ok fs -> fs
+                            | Error _ -> failwith "Failed to create or retrieve feed seen state."
+
+                    let rec execute (s: Set<string>) (el: Rss.Entry list) =
+                        match el with
+                        | e :: tail ->
+                            let s' = execute (s.Add e.Id) tail
+                            feedChannel.SendMessageAsync(embed e) |> Async.AwaitTask |> Async.RunSynchronously |> ignore
+                            Task.Delay(200) |> Async.AwaitTask |> Async.RunSynchronously
+                            s'
+                        | _ -> s
+
                     try
                         let! feed = Rss.AsyncLoad(feedUrl)
-                        for e in feed.Entries |> Seq.rev do
-                            if not (feedSeen |> Set.contains e.Id) then
-                                feedSeen <- feedSeen.Add e.Id
-                                state.Entries.set_Item(feedKey, feedSeen)
-                                let! _ = feedChannel.SendMessageAsync(embed e)
-                                do! Task.Delay(200)
-                                ()
+                        let entries = feed.Entries |> Seq.rev |> List.ofSeq
+                        state.Update(feedKey, (execute feedSeen entries))
                     with :?WebException as e ->
                         logger.LogWarning(sprintf "Failed to complete web request (%s): %s" (e.Status.ToString()) e.Message)
                 with e ->
