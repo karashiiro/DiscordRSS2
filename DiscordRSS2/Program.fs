@@ -9,7 +9,6 @@ open Quartz
 open System
 open System.IO
 open System.Reflection
-open System.Text.RegularExpressions
 open System.Threading.Tasks
 
 let loade name =

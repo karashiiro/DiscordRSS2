@@ -4,35 +4,16 @@ open DSharpPlus
 open DSharpPlus.CommandsNext
 open DSharpPlus.CommandsNext.Attributes
 open DSharpPlus.Entities
+open FeedState
 open Microsoft.Data.Sqlite
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Logging
 open Quartz
 open Rss
 open System
-open System.Collections.Concurrent
 open System.Net
 open System.Runtime.InteropServices
 open System.Threading.Tasks
-
-type FeedState() =
-    let entries = ConcurrentDictionary<string, Set<string>>()
-
-    member _.Create (key) =
-        let value = Set.empty
-        let ok = entries.TryAdd(key, value)
-        if ok then Ok value else Error key
-
-    member _.Retrieve (key) =
-        let ok, value = entries.TryGetValue(key)
-        if ok then Ok value else Error key
-
-    member _.Update (key, value) =
-        entries.set_Item(key, value)
-
-    member _.Delete (key) =
-        let ok, value = entries.TryRemove(key)
-        if ok then Ok value else Error key
 
 [<PersistJobDataAfterExecution>]
 [<DisallowConcurrentExecution>]
@@ -72,7 +53,7 @@ type FeedJob(state0: FeedState, client0: DiscordClient, logger0: ILogger<FeedJob
                         | Error _ ->
                             match state.Create(feedKey) with
                             | Ok fs -> fs
-                            | Error _ -> failwith "Failed to create or retrieve feed seen state."
+                            | Error reason -> failwith reason
 
                     let rec execute (s: Set<string>) (el: Rss.Entry list) =
                         match el with
@@ -86,11 +67,13 @@ type FeedJob(state0: FeedState, client0: DiscordClient, logger0: ILogger<FeedJob
                     try
                         let! feed = Rss.AsyncLoad(feedUrl)
                         let entries = feed.Entries |> Seq.rev |> List.ofSeq
-                        state.Update(feedKey, (execute feedSeen entries))
-                    with :?WebException as e ->
-                        logger.LogWarning(sprintf "Failed to complete web request (%s): %s" (e.Status.ToString()) e.Message)
-                with e ->
-                    raise (JobExecutionException(e))
+                        match state.Update(feedKey, (execute feedSeen entries)) with
+                        | Ok _ -> ()
+                        | Error reason -> failwith reason
+                    with :?WebException as ex ->
+                        logger.LogWarning(sprintf "Failed to complete web request (%s): %s" (ex.Status.ToString()) ex.Message)
+                with ex ->
+                    raise (JobExecutionException(ex))
             }
 
 type FeedModule() =
@@ -126,7 +109,7 @@ type FeedModule() =
             do! db.OpenAsync()
 
             let insert = db.CreateCommand()
-            insert.CommandText <- @"INSERT INTO feeds (FEED_KEY, FEED_GROUP, FEED_URL, FEED_CHANNEL) VALUES ($key, $group, $url, $channel)"
+            insert.CommandText <- @"INSERT INTO feeds (feed_key, feed_group, feed_url, feed_channel) VALUES ($key, $group, $url, $channel)"
             insert.Parameters.AddWithValue("$key", feedKey) |> ignore
             insert.Parameters.AddWithValue("$group", feedChannel) |> ignore
             insert.Parameters.AddWithValue("$url", feed) |> ignore
@@ -158,7 +141,7 @@ type FeedModule() =
             do! db.OpenAsync()
 
             let insert = db.CreateCommand()
-            insert.CommandText <- @"DELETE FROM feeds WHERE FEED_URL = $url AND FEED_CHANNEL = $channel)"
+            insert.CommandText <- @"DELETE FROM feeds WHERE feed_url = $url AND feed_channel = $channel)"
             insert.Parameters.AddWithValue("$url", feed) |> ignore
             insert.Parameters.AddWithValue("$channel", feedChannel) |> ignore
 

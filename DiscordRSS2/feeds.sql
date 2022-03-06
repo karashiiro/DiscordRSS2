@@ -1,7 +1,12 @@
 ﻿CREATE TABLE IF NOT EXISTS feeds (
-    ID           INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-    FEED_KEY     TEXT                              NOT NULL,
-    FEED_GROUP   TEXT                              NOT NULL,
-    FEED_URL     TEXT                              NOT NULL,
-    FEED_CHANNEL TEXT                              NOT NULL
+    feed_key     TEXT PRIMARY KEY                  NOT NULL,
+    feed_group   TEXT                              NOT NULL,
+    feed_url     TEXT                              NOT NULL,
+    feed_channel TEXT                              NOT NULL
+)
+
+CREATE TABLE IF NOT EXISTS seen (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    seen_list    TEXT                              NOT NULL,
+    FOREIGN KEY(seen_feed) REFERENCES feeds(feed_key)    NOT NULL,
 )
