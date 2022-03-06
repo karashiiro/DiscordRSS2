@@ -33,6 +33,14 @@ type FeedJob(state0: FeedState, client0: DiscordClient, logger0: ILogger<FeedJob
         |> fun eb -> eb.WithDescription(sprintf "Posted on <t:%d:f> by [%s](%s)" (entry.Published.ToUnixTimeSeconds()) entry.Author.Name entry.Author.Uri)
         |> fun eb -> eb.Build()
 
+    let rec execute (f: (DiscordEmbed -> Task)) (s: Set<string>) (el: Rss.Entry list) =
+        match el with
+        | e :: tail ->
+            let s' = execute f (s.Add e.Id) tail
+            f (embed e) |> Async.AwaitTask |> Async.RunSynchronously |> ignore
+            s'
+        | _ -> s
+
     interface IJob with
         member _.Execute context =
             task {
@@ -55,19 +63,17 @@ type FeedJob(state0: FeedState, client0: DiscordClient, logger0: ILogger<FeedJob
                             | Ok fs -> fs
                             | Error reason -> failwith reason
 
-                    let rec execute (s: Set<string>) (el: Rss.Entry list) =
-                        match el with
-                        | e :: tail ->
-                            let s' = execute (s.Add e.Id) tail
-                            feedChannel.SendMessageAsync(embed e) |> Async.AwaitTask |> Async.RunSynchronously |> ignore
-                            Task.Delay(200) |> Async.AwaitTask |> Async.RunSynchronously
-                            s'
-                        | _ -> s
+                    let publish (e: DiscordEmbed) =
+                        task {
+                            let! _ = feedChannel.SendMessageAsync(e)
+                            do! Task.Delay(200)
+                        }
+                        :> Task
 
                     try
                         let! feed = Rss.AsyncLoad(feedUrl)
                         let entries = feed.Entries |> Seq.rev |> List.ofSeq
-                        match state.Update(feedKey, (execute feedSeen entries)) with
+                        match state.Update(feedKey, (execute publish feedSeen entries)) with
                         | Ok _ -> ()
                         | Error reason -> failwith reason
                     with :?WebException as ex ->
