@@ -3,10 +3,10 @@
     feed_group   TEXT                              NOT NULL,
     feed_url     TEXT                              NOT NULL,
     feed_channel TEXT                              NOT NULL
-)
+);
 
 CREATE TABLE IF NOT EXISTS seen (
     id           INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     seen_list    TEXT                              NOT NULL,
-    FOREIGN KEY(seen_feed) REFERENCES feeds(feed_key)    NOT NULL,
-)
+    seen_feed    TEXT                              NOT NULL
+);
