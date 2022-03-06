@@ -1,6 +1,7 @@
 ﻿open DSharpPlus
 open DSharpPlus.CommandsNext
 open Feed
+open FeedState
 open Microsoft.Data.Sqlite
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
