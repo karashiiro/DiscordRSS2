@@ -29,7 +29,7 @@ type FeedState() =
                 do! db.OpenAsync()
 
                 let insert = db.CreateCommand()
-                insert.CommandText <- @"INSERT INTO feeds (seen_list, seen_feed) VALUES ($list, $feed)"
+                insert.CommandText <- @"INSERT INTO feed_state (seen_list, seen_feed) VALUES ($list, $feed)"
                 insert.Parameters.AddWithValue("$list", serialize Set.empty<string>) |> ignore
                 insert.Parameters.AddWithValue("$feed", feedKey) |> ignore
 
@@ -52,11 +52,10 @@ type FeedState() =
                 do! db.OpenAsync()
 
                 let query = db.CreateCommand()
-                query.CommandText <- @"SELECT * FROM feeds WHERE seen_feed = $feed LIMIT 1"
+                query.CommandText <- @"SELECT * FROM feed_state WHERE seen_feed = $feed LIMIT 1"
                 query.Parameters.AddWithValue("$feed", feedKey) |> ignore
 
                 let! reader = query.ExecuteReaderAsync()
-                let! _ = reader.NextResultAsync()
                 let sl = reader["seen_list"] :?> String
                 return deserialize sl
             }
@@ -73,7 +72,7 @@ type FeedState() =
                 do! db.OpenAsync()
 
                 let insert = db.CreateCommand()
-                insert.CommandText <- @"UPDATE feeds SET seen_list = $list WHERE feeds.seen_feed = $feed"
+                insert.CommandText <- @"UPDATE feed_state SET seen_list = $list WHERE feed_state.seen_feed = $feed"
                 insert.Parameters.AddWithValue("$list", serialize state) |> ignore
                 insert.Parameters.AddWithValue("$feed", feedKey) |> ignore
 
@@ -96,7 +95,7 @@ type FeedState() =
                 do! db.OpenAsync()
 
                 let insert = db.CreateCommand()
-                insert.CommandText <- @"DELETE FROM feeds WHERE feeds.seen_feed = $feed"
+                insert.CommandText <- @"DELETE FROM feed_state WHERE feeds.seen_feed = $feed"
                 insert.Parameters.AddWithValue("$feed", feedKey) |> ignore
 
                 let! _ = insert.ExecuteNonQueryAsync()

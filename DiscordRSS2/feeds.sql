@@ -5,7 +5,7 @@
     feed_channel TEXT                              NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS seen (
+CREATE TABLE IF NOT EXISTS feed_state (
     id           INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     seen_list    TEXT                              NOT NULL,
     seen_feed    TEXT                              NOT NULL
