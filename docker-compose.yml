@@ -1,0 +1,8 @@
+version: "2.4"
+services:
+  discordrss2:
+    build: "."
+    environment:
+      DISCORDRSS_BOT_TOKEN: ${DISCORDRSS_BOT_TOKEN}
+    volumes:
+      - ./data:/data

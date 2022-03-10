@@ -3,6 +3,7 @@ open DSharpPlus.CommandsNext
 open Feed
 open FeedState
 open Microsoft.Data.Sqlite
+open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Hosting
 open Microsoft.Extensions.Logging
@@ -19,16 +20,16 @@ let loade name =
         return! sr.ReadToEndAsync()
     }
 
-let discord token (services: IServiceProvider) =
-    let config = DiscordConfiguration()
-    config.Token <- token
-    config.TokenType <- TokenType.Bot
-    config.LoggerFactory <- services.GetRequiredService<ILoggerFactory>()
+let discord token (config: IConfiguration) (services: IServiceProvider) =
+    let disConfig = DiscordConfiguration()
+    disConfig.Token <- token
+    disConfig.TokenType <- TokenType.Bot
+    disConfig.LoggerFactory <- services.GetRequiredService<ILoggerFactory>()
 
-    let client = new DiscordClient(config)
+    let client = new DiscordClient(disConfig)
 
     let commandsConfig = CommandsNextConfiguration()
-    commandsConfig.StringPrefixes <- ["~"]
+    commandsConfig.StringPrefixes <- [config["Bot:CommandPrefix"]]
     commandsConfig.Services <- services
 
     let commands = client.UseCommandsNext(commandsConfig)
@@ -40,18 +41,16 @@ let discord token (services: IServiceProvider) =
 
     client
 
-let feedsDbPath = "feeds.db"
-let jobsDbPath = "jobs.db"
-let initDb =
+let initDb feedsDb jobsDb =
     task {
-        use db1 = new SqliteConnection(sprintf "Data Source=%s" feedsDbPath)
+        use db1 = new SqliteConnection(feedsDb)
         do! db1.OpenAsync()
         let dbInit1 = db1.CreateCommand()
         let! feedsScript = loade "DiscordRSS2.feeds.sql"
         dbInit1.CommandText <- feedsScript
         let! _ = dbInit1.ExecuteNonQueryAsync()
 
-        use db2 = new SqliteConnection(sprintf "Data Source=%s" jobsDbPath)
+        use db2 = new SqliteConnection(jobsDb)
         do! db2.OpenAsync()
         let dbInit2 = db2.CreateCommand()
         let! quartzScript = loade "DiscordRSS2.Quartz.tables_sqlite.sql"
@@ -61,19 +60,21 @@ let initDb =
         ()
     }
 
-let configureServices _ (services: IServiceCollection) =
-    initDb
+let configureServices (host: HostBuilderContext) (services: IServiceCollection) =
+    let config = host.Configuration
+
+    initDb config["Database:Feeds"] config["Database:Jobs"]
     |> Async.AwaitTask
     |> Async.RunSynchronously
     
     services
-    |> fun sv -> sv.AddSingleton<DiscordClient>(fun s -> discord (Environment.GetEnvironmentVariable("PRIMA_BOT_TOKEN")) s)
+    |> fun sv -> sv.AddSingleton<DiscordClient>(discord (Environment.GetEnvironmentVariable("DISCORDRSS_BOT_TOKEN")) config)
     |> fun sv -> sv.AddSingleton<FeedState>()
     |> fun sv -> sv.AddQuartz (fun q ->
         q.UseMicrosoftDependencyInjectionJobFactory()
         q.UsePersistentStore(fun opts ->
             opts.UseProperties <- true
-            opts.UseMicrosoftSQLite(sprintf "Data Source=%s" jobsDbPath)
+            opts.UseMicrosoftSQLite(config["Database:Jobs"])
             opts.UseJsonSerializer()))
     |> fun sv -> sv.AddQuartzHostedService (fun opts ->
         opts.WaitForJobsToComplete <- true)

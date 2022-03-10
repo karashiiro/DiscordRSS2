@@ -3,7 +3,20 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.1.32210.238
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "DiscordRSS2", "DiscordRSS2\DiscordRSS2.fsproj", "{8FA569ED-69C6-43B1-9291-9DBCFEF724F6}"
+Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "DiscordRSS2", "DiscordRSS2\DiscordRSS2.fsproj", "{8FA569ED-69C6-43B1-9291-9DBCFEF724F6}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Docker", "Docker", "{343098DD-FC28-48EB-B897-5D1DA6C89296}"
+	ProjectSection(SolutionItems) = preProject
+		docker-compose.yml = docker-compose.yml
+		Dockerfile = Dockerfile
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Github", "Github", "{E302CA9E-2AA7-447F-B8B5-673B6625A8A8}"
+	ProjectSection(SolutionItems) = preProject
+		.gitattributes = .gitattributes
+		.gitignore = .gitignore
+		README.md = README.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

@@ -2,11 +2,14 @@
 
 open FSharp.Data
 open Microsoft.Data.Sqlite
+open Microsoft.Extensions.Configuration
 open System
 
 type SeenListEntry = JsonProvider<"""{ "id": "h571so1237lx" }""", RootName="entry">
 
-type FeedState() =
+type FeedState(config0: IConfiguration) =
+    let config = config0
+
     let serialize (s: Set<string>) =
         s
         |> Set.toArray
@@ -25,11 +28,11 @@ type FeedState() =
         try
             task {
                 // Persist the state to the database
-                use db = new SqliteConnection("Data Source=feeds.db")
+                use db = new SqliteConnection(config["Database:Feeds"])
                 do! db.OpenAsync()
 
                 let insert = db.CreateCommand()
-                insert.CommandText <- @"INSERT INTO feed_state (seen_list, seen_feed) VALUES ($list, $feed)"
+                insert.CommandText <- "INSERT INTO feed_state (seen_list, seen_feed) VALUES ($list, $feed)"
                 insert.Parameters.AddWithValue("$list", serialize Set.empty<string>) |> ignore
                 insert.Parameters.AddWithValue("$feed", feedKey) |> ignore
 
@@ -42,37 +45,39 @@ type FeedState() =
 
             Ok Set.empty<string>
         with ex ->
-            Error ex.Message
+            Error (sprintf "%O\n" ex)
 
     member _.Retrieve (feedKey) =
         try
             Ok (task {
                 // Get the state from the database
-                use db = new SqliteConnection("Data Source=feeds.db")
-                do! db.OpenAsync()
+                use db = new SqliteConnection(config["Database:Feeds"])
+                do db.Open()
 
                 let query = db.CreateCommand()
-                query.CommandText <- @"SELECT * FROM feed_state WHERE seen_feed = $feed LIMIT 1"
+                query.CommandText <- "SELECT * FROM feed_state WHERE seen_feed = $feed"
                 query.Parameters.AddWithValue("$feed", feedKey) |> ignore
 
-                let! reader = query.ExecuteReaderAsync()
+                let reader = query.ExecuteReader()
+                let _ = reader.Read()
                 let sl = reader["seen_list"] :?> String
+                
                 return deserialize sl
             }
             |> Async.AwaitTask
             |> Async.RunSynchronously)
         with ex ->
-            Error ex.Message
+            Error (sprintf "%O\n" ex)
 
     member _.Update (feedKey, state) =
         try
             task {
                 // Persist the state to the database
-                use db = new SqliteConnection("Data Source=feeds.db")
+                use db = new SqliteConnection(config["Database:Feeds"])
                 do! db.OpenAsync()
 
                 let insert = db.CreateCommand()
-                insert.CommandText <- @"UPDATE feed_state SET seen_list = $list WHERE feed_state.seen_feed = $feed"
+                insert.CommandText <- "UPDATE feed_state SET seen_list = $list WHERE feed_state.seen_feed = $feed"
                 insert.Parameters.AddWithValue("$list", serialize state) |> ignore
                 insert.Parameters.AddWithValue("$feed", feedKey) |> ignore
 
@@ -85,17 +90,17 @@ type FeedState() =
 
             Ok state
         with ex ->
-            Error ex.Message
+            Error (sprintf "%O\n" ex)
 
     member _.Delete (feedKey) =
         try
             task {
                 // Persist the state to the database
-                use db = new SqliteConnection("Data Source=feeds.db")
+                use db = new SqliteConnection(config["Database:Feeds"])
                 do! db.OpenAsync()
 
                 let insert = db.CreateCommand()
-                insert.CommandText <- @"DELETE FROM feed_state WHERE feeds.seen_feed = $feed"
+                insert.CommandText <- "DELETE FROM feed_state WHERE feeds.seen_feed = $feed"
                 insert.Parameters.AddWithValue("$feed", feedKey) |> ignore
 
                 let! _ = insert.ExecuteNonQueryAsync()
@@ -107,4 +112,4 @@ type FeedState() =
 
             Ok feedKey
         with ex ->
-            Error ex.Message
+            Error (sprintf "%O\n" ex)

@@ -6,6 +6,7 @@ open DSharpPlus.CommandsNext.Attributes
 open DSharpPlus.Entities
 open FeedState
 open Microsoft.Data.Sqlite
+open Microsoft.Extensions.Configuration
 open Microsoft.Extensions.DependencyInjection
 open Microsoft.Extensions.Logging
 open Quartz
@@ -14,6 +15,25 @@ open System
 open System.Net
 open System.Runtime.InteropServices
 open System.Threading.Tasks
+
+type ChannelId =
+    | NumberCId of uint64
+    | StringCId of string
+
+type Url =
+    | StringUrl of string
+    | ParsedUrl of Uri
+
+let private key channel url =
+    let channel' =
+        match channel with
+        | NumberCId n -> n.ToString()
+        | StringCId s -> s
+    let url' =
+        match url with
+        | StringUrl s -> Uri(s)
+        | ParsedUrl u -> u
+    sprintf "%s-%s%s" channel' url'.Host url'.PathAndQuery
 
 [<PersistJobDataAfterExecution>]
 [<DisallowConcurrentExecution>]
@@ -36,32 +56,40 @@ type FeedJob(state0: FeedState, client0: DiscordClient, logger0: ILogger<FeedJob
     let rec execute (f: (DiscordEmbed -> Task)) (s: Set<string>) (el: Rss.Entry list) =
         match el with
         | e :: tail ->
-            let s' = execute f (s.Add e.Id) tail
-            f (embed e) |> Async.AwaitTask |> Async.RunSynchronously |> ignore
-            s'
+            if not (s |> Set.contains e.Id) then
+                let s' = execute f (s.Add e.Id) tail
+                f (embed e) |> Async.AwaitTask |> Async.RunSynchronously |> ignore
+                s'
+            else
+                execute f (s.Add e.Id) tail
         | _ -> s
+
+    let spfidentify =
+         sprintf "for %s in channel %d"
 
     interface IJob with
         member _.Execute context =
             task {
                 try
                     let dataMap = context.JobDetail.JobDataMap
-
-                    let feedKey =
-                        (context.JobDetail.Key.Group, context.JobDetail.Key.Name)
-                        ||> sprintf "%s-%s"
                     let feedUrl = dataMap.GetString("feedUrl")
-
                     let feedChannelId = dataMap.GetString("feedChannel") |> uint64
                     let! feedChannel = client.GetChannelAsync(feedChannelId)
+
+                    logger.LogInformation("Starting RSS update " + spfidentify feedUrl feedChannelId)
+
+                    let feedKey = key (NumberCId feedChannelId) (StringUrl feedUrl)
 
                     let feedSeen =
                         match state.Retrieve(feedKey) with
                         | Ok fs -> fs
-                        | Error _ ->
+                        | Error err ->
+                            logger.LogWarning(sprintf "Failed to retrieve feed state %s (this is normal for new jobs): %s" (spfidentify feedUrl feedChannelId) err)
+                            logger.LogInformation("Creating new feed state " + spfidentify feedUrl feedChannelId)
                             match state.Create(feedKey) with
                             | Ok fs -> fs
                             | Error reason -> failwith reason
+                    let feedCountStart = feedSeen.Count
 
                     let publish (e: DiscordEmbed) =
                         task {
@@ -73,25 +101,26 @@ type FeedJob(state0: FeedState, client0: DiscordClient, logger0: ILogger<FeedJob
                     try
                         let! feed = Rss.AsyncLoad(feedUrl)
                         let entries = feed.Entries |> Seq.rev |> List.ofSeq
-                        match state.Update(feedKey, (execute publish feedSeen entries)) with
-                        | Ok _ -> ()
-                        | Error reason -> failwith reason
+                        let feedCountEnd =
+                            match state.Update(feedKey, (execute publish feedSeen entries)) with
+                            | Ok feedSeen' -> feedSeen'.Count
+                            | Error reason -> failwith reason
+                        logger.LogInformation(sprintf "Completed RSS update %s - found %d new entries" (spfidentify feedUrl feedChannelId) (feedCountEnd - feedCountStart))
                     with :?WebException as ex ->
-                        logger.LogWarning(sprintf "Failed to complete web request (%s): %s" (ex.Status.ToString()) ex.Message)
+                        logger.LogWarning(sprintf "Failed to complete web request %s (%s): %s" (spfidentify feedUrl feedChannelId) (ex.Status.ToString()) ex.Message)
                 with ex ->
                     raise (JobExecutionException(ex))
             }
 
-type FeedModule() =
+type FeedModule(config0: IConfiguration) =
     inherit BaseCommandModule()
 
-    let parseUrlToKey (uri: Uri) =
-        uri.Host + uri.PathAndQuery
+    let config = config0
 
     [<Command "subscribe"; Description "Subscribe to an RSS feed.">]
     member _.subscribe (ctx: CommandContext, feed: string, [<Optional; DefaultParameterValue(null: DiscordChannel)>] channel: DiscordChannel) =
         task {
-            let feedKey = parseUrlToKey (Uri(feed))
+            let feedKey = key (NumberCId channel.Id) (StringUrl feed)
             let feedChannel = (if isNull channel then ctx.Channel.Id else channel.Id) |> sprintf "%d"
 
             // Create the job detail
@@ -111,7 +140,7 @@ type FeedModule() =
                 |> fun tb -> tb.Build()
 
             // Persist the job information to the database
-            use db = new SqliteConnection("Data Source=feeds.db")
+            use db = new SqliteConnection(config["Database:Feeds"])
             do! db.OpenAsync()
 
             let insert = db.CreateCommand()
@@ -134,7 +163,7 @@ type FeedModule() =
     [<Command "unsubscribe"; Description "Unsubscribe from an RSS feed.">]
     member _.unsubscribe (ctx: CommandContext, feed: string, [<Optional; DefaultParameterValue(null: DiscordChannel)>] channel: DiscordChannel) =
         task {
-            let feedKey = parseUrlToKey (Uri(feed))
+            let feedKey = key (NumberCId channel.Id) (StringUrl feed)
             let feedChannel = (if isNull channel then ctx.Channel.Id else channel.Id) |> sprintf "%d"
 
             // Delete the job from the scheduler
@@ -143,7 +172,7 @@ type FeedModule() =
             let! result = scheduler.DeleteJob(JobKey(feedKey, feedChannel))
 
             // Delete the job information from the database
-            use db = new SqliteConnection("Data Source=feeds.db")
+            use db = new SqliteConnection(config["Database:Feeds"])
             do! db.OpenAsync()
 
             let insert = db.CreateCommand()

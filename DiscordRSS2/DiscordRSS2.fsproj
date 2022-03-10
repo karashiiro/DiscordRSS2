@@ -3,9 +3,17 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net6.0</TargetFramework>
+    <Configurations>Debug;Release</Configurations>
   </PropertyGroup>
 
   <ItemGroup>
+    <Content Include="Properties/launchSettings.json" />
+    <Content Include="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
+    <Content Include="appsettings.Production.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </Content>
     <EmbeddedResource Include="feeds.sql" />
     <EmbeddedResource Include="Quartz\tables_sqlite.sql" />
     <Compile Include="Rss.fs" />
@@ -14,15 +22,20 @@
     <Compile Include="Program.fs" />
   </ItemGroup>
 
+  <ItemGroup />
+
   <ItemGroup>
     <PackageReference Include="DSharpPlus" Version="4.1.0" />
     <PackageReference Include="DSharpPlus.CommandsNext" Version="4.1.0" />
     <PackageReference Include="FSharp.Data" Version="4.2.7" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="6.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="6.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="6.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="6.0.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="6.0.1" />
-    <PackageReference Include="Quartz" Version="3.4.0-preview-20220212-1701" />
-    <PackageReference Include="Quartz.Extensions.Hosting" Version="3.4.0-preview-20220212-1701" />
-    <PackageReference Include="Quartz.Serialization.Json" Version="3.4.0-preview-20220212-1701" />
+    <PackageReference Include="Quartz" Version="3.4.0-preview-20220304-1315" />
+    <PackageReference Include="Quartz.Extensions.Hosting" Version="3.4.0-preview-20220304-1315" />
+    <PackageReference Include="Quartz.Serialization.Json" Version="3.4.0-preview-20220304-1315" />
   </ItemGroup>
 
   <ItemGroup>
