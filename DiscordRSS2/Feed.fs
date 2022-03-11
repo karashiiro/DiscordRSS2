@@ -118,6 +118,7 @@ type FeedModule(config0: IConfiguration) =
     let config = config0
 
     [<Command "subscribe"; Description "Subscribe to an RSS feed.">]
+    [<RequirePermissions(Permissions.ManageChannels, true)>]
     member _.subscribe (ctx: CommandContext, feed: string, [<Optional; DefaultParameterValue(null: DiscordChannel)>] channel: DiscordChannel) =
         task {
             let feedKey = key (NumberCId channel.Id) (StringUrl feed)
@@ -161,6 +162,7 @@ type FeedModule(config0: IConfiguration) =
         :> Task
 
     [<Command "unsubscribe"; Description "Unsubscribe from an RSS feed.">]
+    [<RequirePermissions(Permissions.ManageChannels, true)>]
     member _.unsubscribe (ctx: CommandContext, feed: string, [<Optional; DefaultParameterValue(null: DiscordChannel)>] channel: DiscordChannel) =
         task {
             let feedKey = key (NumberCId channel.Id) (StringUrl feed)
